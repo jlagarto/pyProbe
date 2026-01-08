@@ -1,0 +1,225 @@
+from time import monotonic
+from PyQt5.QtCore import QObject, pyqtSignal, QTimer, pyqtSlot
+from utils.ProcessingMode import ProcessingMode
+import numpy as np
+import cv2
+
+class CameraWorker(QObject):
+    signal = pyqtSignal(int, np.ndarray, np.ndarray, int, int, int, float, int, int)  # Emit processed frame and spot coordinates
+    finished = pyqtSignal()
+
+    def __init__(self, cam, processing_mode=ProcessingMode.NORMAL):
+        super().__init__()
+        self.cam = cam
+        self.running = False
+        self.timer = None
+
+        # ROI tracking state
+        self.scale = 0.5
+        self.roi_size = 100
+        self.roi_x, self.roi_y = 0, 0
+        self.initialize_roi = False
+
+        # Control variables
+        self.processing_mode = processing_mode
+
+        # Frames
+        self.frame = None
+        self.bkg = None
+
+        # Control processing rate
+        self.frame_skip = 0
+        self.frame_count = 0
+
+        # Tracking history
+        self.history = []
+        self.max_history = 500
+
+        # Last measurement index of TT
+        self.latest_measurement_index_1 = -1
+        self.latest_measurement_index_2 = -1
+
+    @pyqtSlot(int, int)
+    def update_measurement_index(self, idx1, idx2):
+        """
+        Slot to receive data from the instrument.
+        This is thread-safe; Qt handles the transfer.
+        """
+        self.latest_measurement_index_1 = idx1
+        self.latest_measurement_index_2 = idx2
+
+    def start(self):
+        self.running = True
+        self.frame_count =0
+        self.timer = QTimer()
+        self.timer.setInterval(1)  # 1 ms
+        self.timer.timeout.connect(self.process_frame)
+        self.timer.start()
+        
+
+    def stop(self):
+        self.running = False
+        self.processing_mode = ProcessingMode.OFF
+        if self.timer:
+            self.timer.stop()
+
+    def process_frame(self):
+        if not self.running:
+            if self.timer:
+                self.timer.stop()
+            self.finished.emit()
+            return
+
+        # grab frame and set acquisition time
+        frame_time = monotonic()
+        frame = self.cam.acquire()
+        self.frame = frame
+
+        # TT measurements index
+        # Use the variable inside your processing logic
+        current_index_1 = self.latest_measurement_index_1
+        current_index_2 = self.latest_measurement_index_2
+
+        if frame is None or frame.size == 0:
+            return
+
+        self.frame_count += 1
+        if self.frame_skip != 0 and self.frame_count % self.frame_skip != 0:
+            return
+
+        height, width = frame.shape[:2]
+        output = frame.copy()
+        x_full, y_full, r_full = -1, -1, -1
+
+        # --- Optional background subtraction ---
+        if self.bkg is not None and self.bkg.shape == frame.shape:
+            hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+            hsv_bkg = cv2.cvtColor(self.bkg, cv2.COLOR_BGR2HSV)
+            diff_v = cv2.absdiff(hsv_frame[..., 2], hsv_bkg[..., 2])
+            _, mask = cv2.threshold(diff_v, 30, 255, cv2.THRESH_BINARY)
+            frame = cv2.bitwise_and(frame, frame, mask=mask)
+        # ---------------------------------------
+
+        if self.processing_mode != ProcessingMode.OFF:
+            # --- ROI initialization ---
+            if self.initialize_roi:
+                scaled = cv2.resize(frame, (0, 0), fx=self.scale, fy=self.scale)
+                result = self.process_frame_and_find_spot(scaled, scale=self.scale)
+
+                if result:
+                    x_full, y_full, r_full = result
+                    self.roi_x = max(0, x_full - self.roi_size // 2)
+                    self.roi_y = max(0, y_full - self.roi_size // 2)
+                    self.initialize_roi = False
+
+                    cv2.circle(output, (x_full, y_full), r_full, (0, 255, 0), 2)
+                    cv2.circle(output, (x_full, y_full), 2, (0, 0, 255), 3)
+
+            # --- ROI tracking ---
+            else:
+                rx = max(0, min(self.roi_x, width - self.roi_size))
+                ry = max(0, min(self.roi_y, height - self.roi_size))
+                roi = frame[ry:ry + self.roi_size, rx:rx + self.roi_size]
+
+                result = self.process_frame_and_find_spot(roi, offset_x=rx, offset_y=ry)
+
+                if result:
+                    x_full, y_full, r_full = result
+                    r_full = int(r_full / 2)
+                    cv2.circle(output, (x_full, y_full), r_full, (0, 255, 0), 2)
+                    cv2.circle(output, (x_full, y_full), 2, (0, 0, 255), 3)
+
+                    # Update ROI center
+                    self.roi_x = max(0, x_full - self.roi_size // 2)
+                    self.roi_y = max(0, y_full - self.roi_size // 2)
+                else:
+                    # Lost target, try to reinitialize
+                    self.initialize_roi = True
+
+            # --- Maintain and draw trajectory ---
+            if self.processing_mode == ProcessingMode.TRACKING:
+                if not hasattr(self, "history"):
+                    self.history = []
+                    self.max_history = 100
+
+                if x_full != -1 and y_full != -1:
+                    self.history.append((x_full, y_full))
+                    if len(self.history) > self.max_history:
+                        self.history.pop(0)
+
+                elif hasattr(self, "history") and self.history:
+                    # Use last known position if detection fails
+                    x_full, y_full = self.history[-1]
+
+                # Draw motion trail
+                if len(self.history) > 1:
+                    overlay = output.copy()
+                    color = (255, 0, 0)  # blue
+                    thickness = 2
+                    alpha = 0.2  # 0 = transparent, 1 = opaque
+
+                    for i in range(1, len(self.history)):
+                        cv2.line(overlay, self.history[i - 1], self.history[i], color, thickness)
+
+                    cv2.addWeighted(overlay, alpha, output, 1 - alpha, 0, output)
+
+            # --- Debug ROI outline ---
+            if self.processing_mode == ProcessingMode.DEBUG:
+                cv2.rectangle(output,
+                            (self.roi_x, self.roi_y),
+                            (self.roi_x + self.roi_size, self.roi_y + self.roi_size),
+                            (255, 255, 0), 1)
+
+        # Emit processed frame and coordinates
+        self.signal.emit(self.frame_count, frame.copy(), output, x_full, y_full, r_full, frame_time, current_index_1, current_index_2)
+
+
+    def process_frame_and_find_spot(self, image, offset_x=0, offset_y=0, scale=1.0):
+        """Find the largest blueish spot in the given image."""
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+        # Threshold for violet color in HSV
+        # define lower and upper bounds for violet
+        lower_bound = np.array([130, 60, 40])
+        upper_bound = np.array([155, 255, 255]) 
+        mask = cv2.inRange(hsv, lower_bound, upper_bound)
+        
+        # Find contours
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Filter out small contours
+        min_area = 50
+        contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_area]
+
+        # Debug: show mask
+        if self.processing_mode == ProcessingMode.DEBUG:
+            cv2.imshow("mask", mask)
+
+
+        if contours:
+            largest = max(contours, key=cv2.contourArea)
+            (x, y), radius = cv2.minEnclosingCircle(largest)
+            x_full = int(offset_x + x / scale)
+            y_full = int(offset_y + y / scale)
+            r_full = int(radius / scale)
+            return x_full, y_full, r_full
+        
+        return None
+
+    def capture_background(self):
+        """Capture and store a background frame."""
+        if self.frame is not None:
+            self.bkg = self.frame.copy()
+            cv2.imshow("background", self.bkg)
+
+    def reset_background(self):
+        """Reset stored background."""
+        self.bkg = None
+
+    def reset_tracking_history(self):
+        """Clear tracking history."""
+        self.history = []
+
+    def reset_frame_counter (self):
+        """ clear frame counter """
+        self.frame_count = 0

@@ -1,0 +1,45 @@
+camera:
+  device_id: USB\VID_1E10&PID_3300&MI_00\6&107F3BCC&0&0000_0
+  exposure_time: 10
+  enable: 1
+  trigger_mode: "hardware"  # Options: "hardware", "software"
+  format:
+    width: 600
+    height: 600
+  offset:
+    x: 420 #212
+    y: 240 #92
+
+led:
+  power: 0
+  enable: 1
+
+laser:
+  power: 0
+  enable: 1
+
+harp:
+  port: COM5
+
+time_tagger: 
+  laser_sync: 1
+  detector_1: 2
+  detector_2: 3
+  external_sync: 4
+  acquisition:
+    number_of_bins: 250
+    bin_width: 200
+    integration_time: 15
+    sync_delay: 27500
+    ch1_delay: 0
+    ch2_delay: 1200
+    ch1_deadtime: 2000
+    ch2_deadtime: 2000
+    sync_trigger_level: -0.25
+    external_sync_trigger_level: 0.8
+    number_of_measurements: 15000
+    holdout_time: 3
+
+default_data_folder: C:\Data
+
+  

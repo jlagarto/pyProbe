@@ -1,0 +1,9 @@
+# pyProbe
+
+pyProbe is a Python-based application designed for acquisition of autofluorescence lifetime data using the TimeTagger Ultra from Swabbian Instruments
+
+## Features
+
+- Laser intensity and frequency control via Harp (use with Becker and Hickl GmbH lasers)
+- Data acquisition in two detection channels using the TimeTagger Ultra (Swabbian Instruments)
+- Detector ON/OFF control (SPADs from Hamamatsu)
