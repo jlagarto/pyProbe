@@ -1,32 +1,101 @@
 # pyProbe
 
-pyProbe is a Python-based application designed for acquisition of autofluorescence lifetime data using the TimeTagger Ultra from Swabbian Instruments
+pyProbe is a Python-based application for acquisition of autofluorescence lifetime data using the TimeTagger Ultra from Swabian Instruments.
 
-## Changes
+## Author
 
-Last updated on 2026-01-09 by João Lagarto
+João Lagarto — Last updated 2026-03-10
 
 ## Features
 
-- Laser intensity and frequency control via Harp (use with Becker and Hickl GmbH lasers)
-- Data acquisition in two detection channels using the TimeTagger Ultra (Swabbian Instruments)
-    - Real time monitoring of input events (detectors, lasers, and external trigger)
-    - Control of curve settings, such as temporal offset, number of bins and bin width
-    - Adjustable acquisition time
+### Laser Control (Harp — Becker & Hickl)
+- Laser intensity and frequency control via serial (COM5 by default)
+- Laser enable/disable interlock
+- Automatic laser on/off at measurement start/stop
 
-- Integration with Spinnaker for integration with FLIR cameras
-    - Adjustable exposure time
-    - Software and Hardware trigger
+### FLIM Data Acquisition (TimeTagger Ultra — Swabian Instruments)
+- Two-channel time-correlated single photon counting (TCSPC)
+- Real-time count rate monitoring (laser sync, 2 detectors, external trigger)
+- Configurable histogram: number of bins, bin width, temporal offsets, dead times
+- Adjustable integration time and number of measurements
+- Holdout timer before acquisition start
+- Acquisition modes:
+  - **Solution** — limited measurements (200), histogram only, no holdout
+  - **In vivo / Ex vivo** — extended acquisition with image processing and holdout
 
-- Detector ON/OFF control (SPADs from Hamamatsu)
-- NeoPixel LED right control of state and brightness.
-- Multiple data acquisition modes
-    - single-point measurements without i2maging
-    - imaging with real-time tracking
-    - imaging with real-time tracking and tracing of last 500 measurements
-    - imaging with real-time tracking, tracing and visible ROI
+### Camera Integration (FLIR — Spinnaker SDK)
+- Hardware and software trigger modes
+- Adjustable exposure time and white balance
+- Configurable ROI (width, height, x/y offset)
+- Real-time spot tracking with multiple image processing modes
+- Background capture and subtraction
 
-## TO DO
+### Detector Control
+- Hamamatsu SPAD detector ON/OFF via Harp
 
-- Direct link with pyProbeAnalysis on button click
+### LED Ring Light Control (NeoPixel via Arduino)
+- Serial control (COM6 by default) over state (on/off) and brightness
 
+### Data Saving
+- FLIM histograms saved as HDF5 (`.h5`) per channel
+- Measurement log (histogram indices, timestamps)
+- Video of acquired frames with frame log (spot coordinates, measurement indices)
+- Snapshots
+
+## Installation
+
+### Requirements
+- Python 3.10 (required for Spinnaker wheel)
+- Spinnaker SDK (FLIR) — wheel bundled at `spinnaker_python-3.2.0.62-cp310-cp310-win_amd64.whl`
+
+### Setup
+
+```bash
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+> Note: The Spinnaker wheel is installed from the local file as specified in `requirements.txt`.
+
+## Configuration
+
+Edit `config.yaml` to set hardware parameters before launching:
+
+| Section | Key parameters |
+|---|---|
+| `camera` | `device_id`, `exposure_time`, `trigger_mode`, `format`, `offset` |
+| `harp` | `port` (e.g. COM5) |
+| `time_tagger` | channel assignments, bin settings, delays, dead times, trigger levels |
+| `led` | `power`, `enable` |
+| `laser` | `power`, `enable` |
+| `default_data_folder` | Root folder for data saving dialogs |
+
+Arduino serial port defaults to `COM6`; override with `arduino_port` key in `config.yaml`.
+
+## Running
+
+```bash
+python main.py
+```
+
+## Keyboard Shortcuts
+
+| Key | Action |
+|---|---|
+| `F5` | Start measurement |
+| `F9` | Stop measurement |
+| `Ctrl+S` | Save data |
+
+## Project Structure
+
+```
+pyProbe/
+├── main.py                  # Entry point
+├── config.yaml              # Hardware configuration
+├── controllers/             # Hardware controllers (Harp, TimeTagger, Camera)
+├── instruments/             # Low-level hardware wrappers
+├── views/                   # PyQt5 GUI (MainWindow.py + MainWindow.ui)
+├── workers/                 # QThread workers (Data, FLIM, CountRate, Camera)
+└── utils/                   # DataSaver, ProcessingMode, helpers
+```
