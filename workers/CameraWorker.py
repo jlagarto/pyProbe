@@ -91,6 +91,10 @@ class CameraWorker(QObject):
         # cam.acquire() returns a fresh NumPy array each call, so no copy is needed.
         video_frame = frame
 
+        # output is copied from the ORIGINAL frame (before background subtraction)
+        # so that overlays are drawn on the unmodified image, matching original behaviour.
+        output = frame.copy()
+
         # --- Optional background subtraction ---
         # Pre-compute HSV of the masked result so process_frame_and_find_spot
         # can reuse it without a second cvtColor call (M3).
@@ -105,8 +109,6 @@ class CameraWorker(QObject):
         # ---------------------------------------
 
         if self.processing_mode != ProcessingMode.OFF:
-            # output copy only needed when overlays will be drawn
-            output = frame.copy()
 
             # --- ROI initialization ---
             if self.initialize_roi:
