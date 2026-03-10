@@ -13,6 +13,7 @@ class FLIMWorker(QObject):
         super().__init__()
         self.enable_processing = False  # Control variable to enable/disable processing
         self.bin_width = bin_width  # Store bin width for lifetime estimation
+        self._time_bins = None  # Cached arange; rebuilt only when histogram length changes
     
     @pyqtSlot(int, int, np.ndarray, float)
     def process(self, idx1, idx2, data, timestamp):
@@ -58,8 +59,11 @@ class FLIMWorker(QObject):
         if total == 0:
             return -1  # No signal
 
-        # Assume time bins are uniformly spaced
-        time = np.arange(len(histogram))
+        # Assume time bins are uniformly spaced; cache the array to avoid per-call allocation
+        n = len(histogram)
+        if self._time_bins is None or len(self._time_bins) != n:
+            self._time_bins = np.arange(n)
+        time = self._time_bins
         centroid = np.sum(histogram * time) / total
 
         # Convert centroid in time units

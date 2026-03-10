@@ -27,8 +27,9 @@ import numpy as np
 import math
 from time import time, monotonic
 from datetime import datetime
+import collections
 import traceback
-import os   
+import os
 
 class MainWindow(QMainWindow):
 
@@ -580,7 +581,7 @@ class MainWindow(QMainWindow):
         self.toggle_laser_output(True)
         
         # initialize logging vars
-        self.frames = []
+        self.frames = collections.deque(maxlen=3000)  # cap at ~3.3 GB for 600x600 BGR frames
         self.frame_no = 0
         self.frame_idx = []
         self.frame_time = []

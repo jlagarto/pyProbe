@@ -2,7 +2,8 @@ from time import sleep, monotonic
 from PyQt5.QtCore import QObject, pyqtSignal
 import numpy as np 
 
-UPDATE_INTERVAL_MS = 1 
+UPDATE_INTERVAL_MS = 0.5
+_EMPTY_DATA = np.empty((2, 0))
 
 class DataWorker(QObject):
     """Worker thread to acquire data and emit signals to update the UI."""
@@ -67,11 +68,9 @@ class DataWorker(QObject):
                     if self.show_curves:
                         h1 = self.histogram_ch1.getData()[i1]
                         h2 = self.histogram_ch2.getData()[i2]
+                        data = np.array([h1, h2])
                     else:
-                        h1 = np.ndarray([])
-                        h2 = np.ndarray([])
-                    
-                    data = np.array([h1, h2])
+                        data = _EMPTY_DATA
 
                     self.signal.emit(i1, i2, data, measurement_time)  
 
@@ -85,7 +84,7 @@ class DataWorker(QObject):
                 # Update internal trackers
                 if ch1_updated: self.last_idx_ch1 = idx_ch1
                 if ch2_updated: self.last_idx_ch2 = idx_ch2
-            # sleep(UPDATE_INTERVAL_MS / 1000)
+            sleep(UPDATE_INTERVAL_MS / 1000)
 
         self.finished.emit()  
 

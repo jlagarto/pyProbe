@@ -1,5 +1,6 @@
+import collections
 from time import monotonic
-from PyQt5.QtCore import QObject, pyqtSignal, QTimer, pyqtSlot
+from PyQt5.QtCore import QObject, pyqtSignal, QCoreApplication, pyqtSlot
 from utils.ProcessingMode import ProcessingMode
 import numpy as np
 import cv2
@@ -12,7 +13,6 @@ class CameraWorker(QObject):
         super().__init__()
         self.cam = cam
         self.running = False
-        self.timer = None
 
         # ROI tracking state
         self.scale = 0.5
@@ -31,9 +31,12 @@ class CameraWorker(QObject):
         self.frame_skip = 0
         self.frame_count = 0
 
-        # Tracking history
-        self.history = []
+        # Tracking history — deque for O(1) append/trim
         self.max_history = 500
+        self.history = collections.deque(maxlen=self.max_history)
+
+        # Pre-computed morphological kernel (constant — no need to rebuild per frame)
+        self._morph_kernel = np.ones((11, 11), np.uint8)
 
         # Last measurement index of TT
         self.latest_measurement_index_1 = -1
@@ -50,33 +53,27 @@ class CameraWorker(QObject):
 
     def start(self):
         self.running = True
-        self.frame_count =0
-        self.timer = QTimer()
-        self.timer.setInterval(1)  # 1 ms
-        self.timer.timeout.connect(self.process_frame)
-        self.timer.start()
-        
+        self.frame_count = 0
+        # Direct loop — cam.acquire() blocks until a frame arrives (~frame period),
+        # so there is no benefit to a QTimer; the camera rate is the natural throttle.
+        while self.running:
+            self.process_frame()
+            # Drain the Qt event queue so queued slot deliveries (e.g. update_measurement_index)
+            # are processed between frames while the event loop is not running.
+            QCoreApplication.processEvents()
+        self.finished.emit()
 
     def stop(self):
         self.running = False
         self.processing_mode = ProcessingMode.OFF
-        if self.timer:
-            self.timer.stop()
 
     def process_frame(self):
-        if not self.running:
-            if self.timer:
-                self.timer.stop()
-            self.finished.emit()
-            return
-
         # grab frame and set acquisition time
         frame_time = monotonic()
         frame = self.cam.acquire()
         self.frame = frame
 
-        # TT measurements index
-        # Use the variable inside your processing logic
+        # Snapshot TT measurement indices
         current_index_1 = self.latest_measurement_index_1
         current_index_2 = self.latest_measurement_index_2
 
@@ -88,21 +85,29 @@ class CameraWorker(QObject):
             return
 
         height, width = frame.shape[:2]
-        output = frame.copy()
         x_full, y_full, r_full = -1, -1, -1
-        
-        video_frame = frame.copy()  # For processing and display, keep original frame intact
+
+        # video_frame: reference to the unmodified frame for storage/display.
+        # cam.acquire() returns a fresh NumPy array each call, so no copy is needed.
+        video_frame = frame
 
         # --- Optional background subtraction ---
+        # Pre-compute HSV of the masked result so process_frame_and_find_spot
+        # can reuse it without a second cvtColor call (M3).
+        hsv_full = None
         if self.bkg is not None and self.bkg.shape == frame.shape:
             hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
             hsv_bkg = cv2.cvtColor(self.bkg, cv2.COLOR_BGR2HSV)
             diff_v = cv2.absdiff(hsv_frame[..., 2], hsv_bkg[..., 2])
             _, mask = cv2.threshold(diff_v, 30, 255, cv2.THRESH_BINARY)
             frame = cv2.bitwise_and(frame, frame, mask=mask)
+            hsv_full = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         # ---------------------------------------
 
         if self.processing_mode != ProcessingMode.OFF:
+            # output copy only needed when overlays will be drawn
+            output = frame.copy()
+
             # --- ROI initialization ---
             if self.initialize_roi:
                 scaled = cv2.resize(frame, (0, 0), fx=self.scale, fy=self.scale)
@@ -123,7 +128,9 @@ class CameraWorker(QObject):
                 ry = max(0, min(self.roi_y, height - self.roi_size))
                 roi = frame[ry:ry + self.roi_size, rx:rx + self.roi_size]
 
-                result = self.process_frame_and_find_spot(roi, offset_x=rx, offset_y=ry)
+                # Pass pre-computed HSV ROI slice when available (avoids redundant cvtColor)
+                hsv_roi = hsv_full[ry:ry + self.roi_size, rx:rx + self.roi_size] if hsv_full is not None else None
+                result = self.process_frame_and_find_spot(roi, offset_x=rx, offset_y=ry, hsv=hsv_roi)
 
                 if result:
                     x_full, y_full, r_full = result
@@ -140,16 +147,9 @@ class CameraWorker(QObject):
 
             # --- Maintain and draw trajectory ---
             if self.processing_mode == ProcessingMode.TRACKING:
-                if not hasattr(self, "history"):
-                    self.history = []
-                    self.max_history = 100
-
                 if x_full != -1 and y_full != -1:
                     self.history.append((x_full, y_full))
-                    if len(self.history) > self.max_history:
-                        self.history.pop(0)
-
-                elif hasattr(self, "history") and self.history:
+                elif self.history:
                     # Use last known position if detection fails
                     x_full, y_full = self.history[-1]
 
@@ -172,13 +172,17 @@ class CameraWorker(QObject):
                             (self.roi_x + self.roi_size, self.roi_y + self.roi_size),
                             (255, 255, 0), 1)
 
+        else:
+            output = frame
+
         # Emit processed frame and coordinates
         self.signal.emit(self.frame_count, video_frame, output, x_full, y_full, r_full, frame_time, current_index_1, current_index_2)
 
 
-    def process_frame_and_find_spot(self, image, offset_x=0, offset_y=0, scale=1.0):
+    def process_frame_and_find_spot(self, image, offset_x=0, offset_y=0, scale=1.0, hsv=None):
         """Find the largest blueish spot in the given image."""
-        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        if hsv is None:
+            hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
         # Mask 1: The Violet Ring
         lower_violet = np.array([130, 60, 40])
@@ -193,31 +197,30 @@ class CameraWorker(QObject):
 
         # Combine and clean up
         combined_mask = cv2.bitwise_or(mask_violet, mask_white)
-        
+
         # Close small holes (the 'donut' effect)
-        kernel = np.ones((11, 11), np.uint8)
-        mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel)
+        mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, self._morph_kernel)
 
         if self.processing_mode == ProcessingMode.DEBUG:
             cv2.imshow("Robust Mask", mask)
 
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
+
         min_area = 50
         valid_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_area]
 
         if valid_contours:
             largest = max(valid_contours, key=cv2.contourArea)
             (x, y), radius = cv2.minEnclosingCircle(largest)
-            
+
             return (
                 int(offset_x + x / scale),
                 int(offset_y + y / scale),
                 int(radius / scale)
             )
-        
+
         return None
-    
+
 
     def capture_background(self):
         """Capture and store a background frame."""
@@ -229,27 +232,27 @@ class CameraWorker(QObject):
         """Reset stored background."""
         self.bkg = None
 
-    def capture_single_frame (self):
-        """ captures and returns a single camera frame """
+    def capture_single_frame(self):
+        """Captures and returns a single camera frame."""
         if self.frame is not None:
             frame = self.frame.copy()
-            
+
             window_name = "snapshot"
             cv2.imshow(window_name, frame)
-            
+
             # Force the window to stay on top
             cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)
-            
+
             # Process the draw event (essential for the image to appear)
             cv2.waitKey(1)
-            
+
             return frame
         return None
 
     def reset_tracking_history(self):
         """Clear tracking history."""
-        self.history = []
+        self.history = collections.deque(maxlen=self.max_history)
 
-    def reset_frame_counter (self):
-        """ clear frame counter """
+    def reset_frame_counter(self):
+        """Clear frame counter."""
         self.frame_count = 0

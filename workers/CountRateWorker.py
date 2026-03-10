@@ -1,14 +1,12 @@
-import threading
 from time import sleep
-from PyQt5.QtCore import QObject
-from PyQt5.QtCore import pyqtSignal
+from PyQt5.QtCore import QObject, pyqtSignal
 import numpy as np
 
-UPDATE_INTERVAL_SEC = 1  # Interval for update, in ms
+UPDATE_INTERVAL_SEC = 1  # Interval between count rate updates, in seconds
 
-class CountRateWorker(QObject, threading.Thread):
+class CountRateWorker(QObject):
     """Worker thread to fetch count rates from the TT."""
-    
+
     signal = pyqtSignal(np.ndarray)  # Signal for passing data to the main thread
     finished = pyqtSignal()  # Signal to notify when stopped
 
@@ -16,7 +14,6 @@ class CountRateWorker(QObject, threading.Thread):
         super().__init__()
         self.running = True  # Flag to control the loop
         self.countrate = countrate
-        self.daemon = True  # Daemon thread will exit when the program ends
 
 
     def run(self):
