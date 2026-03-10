@@ -90,6 +90,8 @@ class CameraWorker(QObject):
         height, width = frame.shape[:2]
         output = frame.copy()
         x_full, y_full, r_full = -1, -1, -1
+        
+        video_frame = frame.copy()  # For processing and display, keep original frame intact
 
         # --- Optional background subtraction ---
         if self.bkg is not None and self.bkg.shape == frame.shape:
@@ -171,40 +173,51 @@ class CameraWorker(QObject):
                             (255, 255, 0), 1)
 
         # Emit processed frame and coordinates
-        self.signal.emit(self.frame_count, frame.copy(), output, x_full, y_full, r_full, frame_time, current_index_1, current_index_2)
+        self.signal.emit(self.frame_count, video_frame, output, x_full, y_full, r_full, frame_time, current_index_1, current_index_2)
 
 
     def process_frame_and_find_spot(self, image, offset_x=0, offset_y=0, scale=1.0):
         """Find the largest blueish spot in the given image."""
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-        # Threshold for violet color in HSV
-        # define lower and upper bounds for violet
-        lower_bound = np.array([130, 60, 40])
-        upper_bound = np.array([155, 255, 255]) 
-        mask = cv2.inRange(hsv, lower_bound, upper_bound)
+        # Mask 1: The Violet Ring
+        lower_violet = np.array([130, 60, 40])
+        upper_violet = np.array([155, 255, 255])
+        mask_violet = cv2.inRange(hsv, lower_violet, upper_violet)
+
+        # Mask 2: The Saturated White Core
+        # (High Value, Low Saturation)
+        lower_white = np.array([0, 0, 230])
+        upper_white = np.array([180, 50, 255])
+        mask_white = cv2.inRange(hsv, lower_white, upper_white)
+
+        # Combine and clean up
+        combined_mask = cv2.bitwise_or(mask_violet, mask_white)
         
-        # Find contours
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # Close small holes (the 'donut' effect)
+        kernel = np.ones((11, 11), np.uint8)
+        mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel)
 
-        # Filter out small contours
-        min_area = 50
-        contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_area]
-
-        # Debug: show mask
         if self.processing_mode == ProcessingMode.DEBUG:
-            cv2.imshow("mask", mask)
+            cv2.imshow("Robust Mask", mask)
 
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        min_area = 50
+        valid_contours = [cnt for cnt in contours if cv2.contourArea(cnt) > min_area]
 
-        if contours:
-            largest = max(contours, key=cv2.contourArea)
+        if valid_contours:
+            largest = max(valid_contours, key=cv2.contourArea)
             (x, y), radius = cv2.minEnclosingCircle(largest)
-            x_full = int(offset_x + x / scale)
-            y_full = int(offset_y + y / scale)
-            r_full = int(radius / scale)
-            return x_full, y_full, r_full
+            
+            return (
+                int(offset_x + x / scale),
+                int(offset_y + y / scale),
+                int(radius / scale)
+            )
         
         return None
+    
 
     def capture_background(self):
         """Capture and store a background frame."""
@@ -215,6 +228,23 @@ class CameraWorker(QObject):
     def reset_background(self):
         """Reset stored background."""
         self.bkg = None
+
+    def capture_single_frame (self):
+        """ captures and returns a single camera frame """
+        if self.frame is not None:
+            frame = self.frame.copy()
+            
+            window_name = "snapshot"
+            cv2.imshow(window_name, frame)
+            
+            # Force the window to stay on top
+            cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)
+            
+            # Process the draw event (essential for the image to appear)
+            cv2.waitKey(1)
+            
+            return frame
+        return None
 
     def reset_tracking_history(self):
         """Clear tracking history."""

@@ -101,7 +101,7 @@ class Camera:
             self.error_msg = ex
             return False
 
-    def config_white_balance(self):
+    def config_white_balance(self, value = 1.5):
 
         try:
             
@@ -116,7 +116,7 @@ class Camera:
            
             node_pixel_balance_ratio = PySpin.CFloatPtr(nodemap.GetNode("BalanceRatio"))
             if PySpin.IsWritable(node_pixel_balance_ratio):
-                node_pixel_balance_ratio.SetValue(1.25)
+                node_pixel_balance_ratio.SetValue(value)
             else:
                 raise PySpin.SpinnakerException("Balance ratio not writable...")
            
@@ -124,7 +124,6 @@ class Camera:
                 
         except PySpin.SpinnakerException as ex:
 
-            print (ex)
             self.error_msg = ex
             return None
 

@@ -79,7 +79,7 @@ class TimeTagger:
 
     def __del__(self):
         """
-        Destructro
+        Destructor, free TimeTagger resources
         """
         TT.freeTimeTagger(self.tagger)
         del self.tagger 

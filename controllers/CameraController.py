@@ -80,7 +80,12 @@ class CameraController:
         if not self.cam.config_trigger(mode):
             return False
 
-
+    def set_white_balance(self, white_balance_value):
+        """
+        Set white balance 
+        """    
+        self.cam.config_white_balance(white_balance_value)
+    
     def set_exposure_time (self, exposure_time):
         """
         Set exposure time

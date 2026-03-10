@@ -59,6 +59,25 @@ class VideoSaver(DataSaver):
         # Save to file with tab delimiter
         np.savetxt(path, data, fmt="%d\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f", delimiter="\t", header="Frame Index\tTime\tSpot X\tSpot Y\tSpot Radius\tIdx1\tIdx2", comments='')  
 
+class ImageSaver(DataSaver):
+    def save (self, image, filename = None):
+        """
+        Docstring for save
+        
+        :param image: image from camera
+        :param filename: Optional custom filename. Defaults to timestamped filename.
+        """
+        if image is not None:
+
+            # Generate default filename if not provided
+            filepath = os.path.join(self.base_dir, filename)
+
+            # RGB to cv2 BGR format
+            #image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(filepath, image)
+
+
+
 class HistogramSaver(DataSaver):
     def save(self, x, histograms, metadata, filename=None):
         """

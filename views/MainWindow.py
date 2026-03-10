@@ -9,13 +9,15 @@
 
 from PyQt5 import uic, QtGui
 from PyQt5.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QShortcut
-from PyQt5.QtCore import Qt, QThread, QTimer
+from PyQt5.QtCore import Qt, QThread, QTimer, QIODevice
+from PyQt5.QtSerialPort import QSerialPort, QSerialPortInfo
 import PySpin
 
 from workers.DataWorker import DataWorker  
 from workers.CountRateWorker import CountRateWorker   
 from workers.CameraWorker import CameraWorker   
 from workers.FLIMWorker import FLIMWorker   
+
 from controllers.TimeTaggerController import TimeTaggerController
 from controllers.CameraController import CameraController
 from controllers.HarpController import HarpController
@@ -45,6 +47,7 @@ class MainWindow(QMainWindow):
         self.acquisition_start_time = 0
         self.acquisition_stop_time = 0
         self.acquisition_time = 0
+        self.acquisition_time_track = 0
         self.in_acquisition = False
         self.enable_curves = True
        
@@ -69,6 +72,9 @@ class MainWindow(QMainWindow):
         # setup keyboard shortcuts
         self._setup_shortcuts()
 
+        # Show message indefinitely (until cleared or overwritten)
+        self.statusBar().showMessage("Ready")
+
     # ===================================================================== #
     # UI configuration and setup
     # ===================================================================== #
@@ -81,6 +87,7 @@ class MainWindow(QMainWindow):
         self.save_data_button.clicked.connect(self.save_data)
         self.capture_background_button.triggered.connect(self.capture_image_background)
         self.reset_background_button.triggered.connect(self.reset_image_background)
+        self.snapshot_button.clicked.connect(self.take_snapshot)
 
         # Connect controllers
         self.no_bins_ctrl.valueChanged.connect(self.set_number_of_bins)
@@ -92,6 +99,7 @@ class MainWindow(QMainWindow):
         self.bin_width_ctrl.valueChanged.connect(self.set_bin_width)  
         self.camera_on.currentTextChanged.connect(self.toggle_camera)
         self.exposure_time_ctrl.valueChanged.connect(self.set_exposure_time)
+        self.white_balance_ctrl.valueChanged.connect(self.set_white_balance)
         self.trigger_mode_ctrl.currentTextChanged.connect(self.set_trigger_mode)
         self.image_processing_ctrl.currentTextChanged.connect(self.enable_image_processing)
         self.laser_power_ctrl.valueChanged.connect(self.set_laser_intensity)
@@ -100,6 +108,9 @@ class MainWindow(QMainWindow):
         self.detectors_ctrl.currentTextChanged.connect(self.set_detectors)
         self.update_curves_ctrl.toggled.connect(self.set_curves_update)
         self.holdout_time_ctrl.valueChanged.connect(self.set_holdout_time)
+        self.led_power_ctrl.valueChanged.connect(self.set_led_brightness)
+        self.led_enable_ctrl.toggled.connect(self.toggle_led)
+        self.acquisition_mode_ctrl.currentTextChanged.connect(self.set_acquisition_mode)
 
     def _read_configs(self):
         """Read configuration file and set initial values"""
@@ -215,6 +226,12 @@ class MainWindow(QMainWindow):
             self.harp = None
             self.show_alert( "Error", f"Failed to start controller unit.\n{e}")
 
+        # Initialize Serial
+        try:
+            self.setup_serial()
+        except Exception as e:
+            self.show_alert("Error", f"Serial setup failed: {e}")
+
     def _setup_shortcuts(self):
         """Setup keyboard shortcuts."""
         
@@ -229,6 +246,49 @@ class MainWindow(QMainWindow):
         # CTRL+s / save data
         shortcut_save_date = QtGui.QKeySequence(Qt.CTRL + Qt.Key.Key_S)
         QShortcut(shortcut_save_date, self).activated.connect(self.save_data)
+
+    # ===================================================================== #
+    # Serial communications with NeoPixel  
+    # ===================================================================== #
+    def setup_serial(self):
+        """Setup serial port without a separate thread."""
+        self.serial = QSerialPort()
+        
+        # Get port from config or default (e.g., COM3 or /dev/ttyUSB0)
+        port_name = self._config.get("arduino_port", "COM6") 
+        self.serial.setPortName(port_name)
+        self.serial.setBaudRate(QSerialPort.Baud9600)
+        
+        # CONNECT SIGNAL: This is the key. 
+        # The 'read_from_arduino' function is ONLY called when data arrives.
+        self.serial.readyRead.connect(self.read_from_arduino)
+
+        # Open the port
+        if self.serial.open(QIODevice.ReadWrite):
+            
+            #  make sure led is turned off at the start
+            self.toggle_led()
+        else:
+            self.show_alert("Serial Error", f"Could not open {port_name}")
+
+    def read_from_arduino(self):
+        """Called automatically when Arduino sends data."""
+        while self.serial.canReadLine():
+            # Read line, decode bytes to string, strip whitespace
+            data = self.serial.readLine().data().decode("utf-8").strip()
+            
+            # Do whatever you need with the data
+            self.statusBar().showMessage(f"LED: {data}", 3000) 
+
+    def write_to_arduino(self, command):
+        """Call this to send data."""
+        if self.serial.isOpen():
+            # Ensure newline if Arduino expects it
+            if not command.endswith('\n'):
+                command += '\n'
+            self.serial.write(command.encode("utf-8"))
+        else:
+            self.show_alert("Serial Error", "Serial port not open!")
 
     # ===================================================================== #
     # UI setters and functional methods  
@@ -295,6 +355,34 @@ class MainWindow(QMainWindow):
         """Enable or disable image processing."""
         if self.camera_worker is not None:
             self.camera_worker.processing_mode = ProcessingMode(self.image_processing_ctrl.currentIndex())
+
+    def set_acquisition_mode(self):
+        """Sets the acquisition mode & adjusts parameters accordingly."""
+        
+        mode = self.acquisition_mode_ctrl.currentText()
+
+        if mode == "solution":
+            # limited number of measurements
+            self.number_of_measurements_ctrl.setValue(200)
+
+            # histogram only, that is, no image processing
+            self.image_processing_ctrl.setCurrentIndex(0)
+
+            # set holdout time to 0 for solution mode
+            self.holdout_time_ctrl.setValue(0)
+
+        else:
+            # in vivo/ex vivo mode: unlimited measurements and image processing enabled
+            self.number_of_measurements_ctrl.setValue(15000)  # long unreachable value to simulate "unlimited" acquisition
+
+            # enable image processing for in vivo/ex vivo mode
+            self.image_processing_ctrl.setCurrentIndex(1)  
+
+            # holdout time can be set by user for in vivo/ex vivo mode, but set it back to default time (as per app configuration)
+            self.holdout_time_ctrl.setValue(self._config["time_tagger"]["acquisition"]["holdout_time"])
+
+            # if in vivo, current model for spot tracking appears to be working
+            # in ex vivo, the current model does not appear to be working. needs better adjustment for detection of the saturated spot (blue on the outside but the center is white) 
     
     # ===================================================================== #
     # Camera methods
@@ -342,6 +430,13 @@ class MainWindow(QMainWindow):
         """Set the exposure time for the camera."""
         self.camera_exposure_time = self.exposure_time_ctrl.value()
         self.cam.set_exposure_time(self.camera_exposure_time)
+
+    def set_white_balance(self):
+        """Set the white balance for the camera.""" 
+        
+        if self.cam is not None: 
+            white_balance_value = self.white_balance_ctrl.value()
+            self.cam.set_white_balance(white_balance_value)
 
     # ===================================================================== #
     # Harp methods
@@ -395,6 +490,30 @@ class MainWindow(QMainWindow):
 
         self.laser_power_toggle.setChecked(is_enabled)
         self.set_laser_intensity()
+
+    # ==================================================================== #
+    # NeoPixel Ring light serial control
+    # ==================================================================== #
+    def toggle_led (self):
+        """ controls neopixel led state """
+        
+        if self.led_enable_ctrl.isChecked():
+            # write value
+            self.write_to_arduino("on")     
+        else:
+            # write value
+            self.write_to_arduino("off") 
+
+    def set_led_brightness(self):
+        """ controls led pixel intensity """
+
+        # get intensity
+        self.led_power = self.led_power_ctrl.value() * 255 / 100
+
+        # write value
+        self.write_to_arduino(f"color 0 0 0 {self.led_power}") 
+
+
     # ==================================================================== #
     # TimeTagger methods
     # ==================================================================== #
@@ -445,6 +564,9 @@ class MainWindow(QMainWindow):
         
         if self.data_thread is not None:
             self.stop_measurement()
+
+        # status bar
+        self.statusBar().showMessage("In acquisition")
 
         # start and stop acquisition buttons
         self.acquisition_start_button.setEnabled(False)
@@ -558,6 +680,7 @@ class MainWindow(QMainWindow):
             # change status button
             self.status_ctrl.setStyleSheet("background-color: gray;")
             self.status_ctrl.setText("Idle")
+            self.status_ctrl.append(f"(acquisition time {self.acquisition_time_track} s)")
 
 
     def _update_holdout_countdown(self):
@@ -604,6 +727,9 @@ class MainWindow(QMainWindow):
 
         # set acquisition metadata
         self.set_acquisition_metadata()
+
+        # status bar
+        self.statusBar().showMessage(f"Acquisition ended with acquisition time of {self.acquisition_time_track} s", 10000)
 
     def set_acquisition_metadata (self):
         """Set the acquisition metadata."""
@@ -742,6 +868,23 @@ class MainWindow(QMainWindow):
             # Print the coordinates to console
             #print(f"Spot Coordinates: ({x}, {y}), Radius: {r}")
 
+
+    def take_snapshot (self):
+        """ Captures current frame and saves it to target folder"""
+        if self.camera_worker is not None:
+            
+            frame = self.camera_worker.capture_single_frame()
+            
+            if frame is not None:
+                # Ask User for Confirmation
+                reply = QMessageBox.question(self, "Confirm Snapshot", "Do you want to save this snapshot?", QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+
+                # Proceed only if Yes
+                if reply == QMessageBox.Yes:
+                    self.save_snapshot(frame)
+                else:
+                    pass
+
     def capture_image_background (self):
         """Capture background frame for subtraction with processing frame"""
         if self.camera_worker is not None:
@@ -819,6 +962,22 @@ class MainWindow(QMainWindow):
             # Catch any unexpected error
             error_details = traceback.format_exc()
             self.show_alert("Unexpected Error", f"An unexpected error occurred:\n{str(e)}\n\nDetails:\n{error_details}")
+
+    def save_snapshot (self, frame):
+        """ saves camera snapshot """
+        if frame is not None:
+
+            folder_path = QFileDialog.getExistingDirectory(self, "Select Folder", self.default_data_folder)
+            if not folder_path:
+                return  # User cancelled dialog
+
+            # save image
+            ImageSaver(folder_path).save(frame, "snapshot.png")
+
+            # notify succsess
+            self.show_alert("Success", "Image successfully saved!")
+        else:
+            self.show_alert("Error", f"No frame to be saved")
 
     # ===================================================================== #
     # UI Helpers

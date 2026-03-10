@@ -48,7 +48,7 @@
       <x>10</x>
       <y>40</y>
       <width>271</width>
-      <height>251</height>
+      <height>291</height>
      </rect>
     </property>
     <property name="frameShape">
@@ -60,32 +60,13 @@
     <property name="lineWidth">
      <number>2</number>
     </property>
-    <widget class="QPushButton" name="led_ctrl_button">
-     <property name="geometry">
-      <rect>
-       <x>150</x>
-       <y>10</y>
-       <width>111</width>
-       <height>31</height>
-      </rect>
-     </property>
-     <property name="font">
-      <font>
-       <weight>75</weight>
-       <bold>true</bold>
-      </font>
-     </property>
-     <property name="text">
-      <string>ON</string>
-     </property>
-    </widget>
     <widget class="QLabel" name="label_12">
      <property name="geometry">
       <rect>
        <x>50</x>
        <y>10</y>
        <width>91</width>
-       <height>31</height>
+       <height>41</height>
       </rect>
      </property>
      <property name="font">
@@ -375,6 +356,69 @@
       <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
      </property>
     </widget>
+    <widget class="QCheckBox" name="led_enable_ctrl">
+     <property name="geometry">
+      <rect>
+       <x>150</x>
+       <y>20</y>
+       <width>20</width>
+       <height>21</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <weight>75</weight>
+       <bold>true</bold>
+      </font>
+     </property>
+     <property name="layoutDirection">
+      <enum>Qt::LeftToRight</enum>
+     </property>
+     <property name="text">
+      <string/>
+     </property>
+     <property name="tristate">
+      <bool>false</bool>
+     </property>
+    </widget>
+    <widget class="QDoubleSpinBox" name="white_balance_ctrl">
+     <property name="geometry">
+      <rect>
+       <x>150</x>
+       <y>250</y>
+       <width>111</width>
+       <height>22</height>
+      </rect>
+     </property>
+     <property name="singleStep">
+      <double>0.100000000000000</double>
+     </property>
+     <property name="value">
+      <double>1.500000000000000</double>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_34">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>250</y>
+       <width>121</width>
+       <height>20</height>
+      </rect>
+     </property>
+     <property name="font">
+      <font>
+       <weight>75</weight>
+       <bold>true</bold>
+      </font>
+     </property>
+     <property name="text">
+      <string>White balance</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+     </property>
+    </widget>
    </widget>
    <widget class="QLabel" name="label_13">
     <property name="geometry">
@@ -403,7 +447,7 @@
     <property name="geometry">
      <rect>
       <x>40</x>
-      <y>300</y>
+      <y>340</y>
       <width>221</width>
       <height>31</height>
      </rect>
@@ -426,7 +470,7 @@
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>330</y>
+      <y>370</y>
       <width>271</width>
       <height>181</height>
      </rect>
@@ -647,7 +691,7 @@
     <property name="geometry">
      <rect>
       <x>40</x>
-      <y>520</y>
+      <y>560</y>
       <width>221</width>
       <height>31</height>
      </rect>
@@ -670,7 +714,7 @@
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>550</y>
+      <y>590</y>
       <width>271</width>
       <height>281</height>
      </rect>
@@ -918,7 +962,7 @@
       <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
      </property>
     </widget>
-    <widget class="QComboBox" name="measurement_mode_ctrl">
+    <widget class="QComboBox" name="acquisition_mode_ctrl">
      <property name="geometry">
       <rect>
        <x>180</x>
@@ -932,17 +976,17 @@
      </property>
      <item>
       <property name="text">
-       <string>Curve only</string>
+       <string>solution</string>
       </property>
      </item>
      <item>
       <property name="text">
-       <string>Endoscope</string>
+       <string>ex_vivo</string>
       </property>
      </item>
      <item>
       <property name="text">
-       <string>Mapping</string>
+       <string>in_vivo</string>
       </property>
      </item>
     </widget>
@@ -1074,7 +1118,7 @@
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>870</y>
+      <y>910</y>
       <width>271</width>
       <height>171</height>
      </rect>
@@ -1277,7 +1321,7 @@
     <property name="geometry">
      <rect>
       <x>40</x>
-      <y>840</y>
+      <y>880</y>
       <width>221</width>
       <height>31</height>
      </rect>
@@ -1450,13 +1494,37 @@
      <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
     </property>
    </widget>
+   <widget class="QToolButton" name="snapshot_button">
+    <property name="geometry">
+     <rect>
+      <x>340</x>
+      <y>80</y>
+      <width>51</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>...</string>
+    </property>
+    <property name="icon">
+     <iconset>
+      <normalon>../../../../../Python/Lib/site-packages/QtDesigner/resources/camera.png</normalon>
+     </iconset>
+    </property>
+    <property name="iconSize">
+     <size>
+      <width>50</width>
+      <height>50</height>
+     </size>
+    </property>
+   </widget>
    <widget class="QLineEdit" name="status_ctrl">
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>1050</y>
+      <y>1090</y>
       <width>271</width>
-      <height>181</height>
+      <height>131</height>
      </rect>
     </property>
     <property name="font">
@@ -1469,6 +1537,9 @@
     </property>
     <property name="styleSheet">
      <string notr="true">background-color: rgb(128, 128, 128);</string>
+    </property>
+    <property name="inputMethodHints">
+     <set>Qt::ImhMultiLine</set>
     </property>
     <property name="text">
      <string>Idle</string>
