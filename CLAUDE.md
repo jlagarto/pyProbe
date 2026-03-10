@@ -60,6 +60,7 @@ Folder name format: `YYYYMMDD_HHMMSS_<type>.<label>/`
 | Date | Commit | Description |
 |---|---|---|
 | 2026-03-10 | f664a96 | Update README and add CLAUDE.md |
+| 2026-03-10 | e694527 | Optimise acquisition and image processing pipeline (branch: acq-opt) |
 
 ## Config Notes
 - `time_tagger.acquisition.integration_time` is in **milliseconds** in YAML but converted to picoseconds internally (`× 1e9`)
