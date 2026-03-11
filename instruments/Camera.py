@@ -136,25 +136,20 @@ class Camera:
 
             nodemap = self.cam.GetNodeMap()
 
-            # image format RGB8 bits
-            node_pixel_format = PySpin.CEnumerationPtr(nodemap.GetNode('PixelFormat'))
-            if PySpin.IsReadable(node_pixel_format) and PySpin.IsWritable(node_pixel_format):
-
-                # Retrieve the desired entry node from the enumeration node
-                node_pixel_format_bgr8 = PySpin.CEnumEntryPtr(node_pixel_format.GetEntryByName('BGR8'))
-                if PySpin.IsReadable(node_pixel_format_bgr8):
-
-                    # Retrieve the integer value from the entry node
-                    pixel_format_bgr8 = node_pixel_format_bgr8.GetValue()
-
-                    # Set integer as new value for enumeration node
-                    node_pixel_format.SetIntValue(pixel_format_bgr8)
-
-                else:
-                    raise PySpin.SpinnakerException('Pixel format BGR8 not readable...')
-
+            # image format RGB8 bits — retry briefly if the node isn't ready yet
+            for _ in range(5):
+                node_pixel_format = PySpin.CEnumerationPtr(nodemap.GetNode('PixelFormat'))
+                if PySpin.IsReadable(node_pixel_format) and PySpin.IsWritable(node_pixel_format):
+                    break
+                time.sleep(0.2)
             else:
-                raise PySpin.SpinnakerException ('Pixel format not readable or writable...')
+                raise PySpin.SpinnakerException('Pixel format not readable or writable...')
+
+            node_pixel_format_bgr8 = PySpin.CEnumEntryPtr(node_pixel_format.GetEntryByName('BGR8'))
+            if PySpin.IsReadable(node_pixel_format_bgr8):
+                node_pixel_format.SetIntValue(node_pixel_format_bgr8.GetValue())
+            else:
+                raise PySpin.SpinnakerException('Pixel format BGR8 not readable...')
                     
             # set image width
             node_width = PySpin.CIntegerPtr(nodemap.GetNode('Width'))

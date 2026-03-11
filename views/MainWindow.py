@@ -500,11 +500,9 @@ class MainWindow(QMainWindow):
         if self.led_enable_ctrl.isChecked():
             # write value
             self.write_to_arduino("on")     
-            print("LED turned ON")  # For debugging
         else:
             # write value
             self.write_to_arduino("off") 
-            print("LED turned OFF")  # For debugging
 
     def set_led_brightness(self):
         """ controls led pixel intensity """
