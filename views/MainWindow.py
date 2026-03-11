@@ -1025,6 +1025,11 @@ class MainWindow(QMainWindow):
             self.harp.stop()
             self.harp = None
 
+        # turn off LED and close serial port
+        if self.serial is not None and self.serial.isOpen():
+            self.write_to_arduino("off")
+            self.serial.close()
+
         event.accept()
 
        
