@@ -266,9 +266,9 @@ class MainWindow(QMainWindow):
 
         # Open the port
         if self.serial.open(QIODevice.ReadWrite):
-            
-            #  make sure led is turned off at the start
-            self.toggle_led()
+            print(f"Serial port {port_name} opened successfully.")
+            # Defer initial command: Arduino resets on DTR and needs ~2 s to boot
+            QTimer.singleShot(2000, self.toggle_led)
         else:
             self.show_alert("Serial Error", f"Could not open {port_name}")
 
@@ -277,6 +277,7 @@ class MainWindow(QMainWindow):
         while self.serial.canReadLine():
             # Read line, decode bytes to string, strip whitespace
             data = self.serial.readLine().data().decode("utf-8").strip()
+            print(f"Received from Arduino: {data}")  # For debugging
             
             # Do whatever you need with the data
             self.statusBar().showMessage(f"LED: {data}", 3000) 
@@ -288,6 +289,8 @@ class MainWindow(QMainWindow):
             if not command.endswith('\n'):
                 command += '\n'
             self.serial.write(command.encode("utf-8"))
+            self.serial.flush()
+            print (f"Sent to Arduino: {command.strip()}")  # For debugging
         else:
             self.show_alert("Serial Error", "Serial port not open!")
 
@@ -501,9 +504,11 @@ class MainWindow(QMainWindow):
         if self.led_enable_ctrl.isChecked():
             # write value
             self.write_to_arduino("on")     
+            print("LED turned ON")  # For debugging
         else:
             # write value
             self.write_to_arduino("off") 
+            print("LED turned OFF")  # For debugging
 
     def set_led_brightness(self):
         """ controls led pixel intensity """
