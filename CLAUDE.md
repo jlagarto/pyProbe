@@ -64,6 +64,7 @@ Folder name format: `YYYYMMDD_HHMMSS_<type>.<label>/`
 | 2026-03-11 | d30397a | Fix background subtraction display regression (branch: acq-opt) |
 | 2026-03-11 | 60fb80c | Fix Arduino LED serial reliability — DTR pulse, flush, readAll (branch: acq-opt) |
 | 2026-03-11 | 4bda87b | Turn off LED and close serial port on exit (branch: acq-opt) |
+| 2026-03-11 | 9191f4f | Fix Arduino LED serial reliability and camera pixel format init (branch: acq-opt) |
 
 ## Config Notes
 - `time_tagger.acquisition.integration_time` is in **milliseconds** in YAML but converted to picoseconds internally (`× 1e9`)
