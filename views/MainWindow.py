@@ -10,7 +10,7 @@
 from PyQt5 import uic, QtGui
 from PyQt5.QtWidgets import QMainWindow, QFileDialog, QMessageBox, QShortcut
 from PyQt5.QtCore import Qt, QThread, QTimer, QIODevice
-from PyQt5.QtSerialPort import QSerialPort, QSerialPortInfo
+from PyQt5.QtSerialPort import QSerialPort
 import PySpin
 
 from workers.DataWorker import DataWorker  
@@ -254,43 +254,39 @@ class MainWindow(QMainWindow):
     def setup_serial(self):
         """Setup serial port without a separate thread."""
         self.serial = QSerialPort()
-        
-        # Get port from config or default (e.g., COM3 or /dev/ttyUSB0)
-        port_name = self._config.get("arduino_port", "COM6") 
+
+        port_name = self._config.get("arduino_port", "COM6")
         self.serial.setPortName(port_name)
         self.serial.setBaudRate(QSerialPort.Baud9600)
-        
-        # CONNECT SIGNAL: This is the key. 
-        # The 'read_from_arduino' function is ONLY called when data arrives.
+
         self.serial.readyRead.connect(self.read_from_arduino)
 
-        # Open the port
         if self.serial.open(QIODevice.ReadWrite):
-            print(f"Serial port {port_name} opened successfully.")
-            # Defer initial command: Arduino resets on DTR and needs ~2 s to boot
-            QTimer.singleShot(2000, self.toggle_led)
+            # Pulse DTR low then high to force Arduino reset (same as Arduino IDE does).
+            # Without this, Arduino stays in its previous state and may not respond.
+            self.serial.setDataTerminalReady(False)
+            QTimer.singleShot(50, self._release_arduino_reset)
         else:
             self.show_alert("Serial Error", f"Could not open {port_name}")
 
+    def _release_arduino_reset(self):
+        """Deassert DTR so Arduino starts booting, then send initial state after 2 s."""
+        self.serial.setDataTerminalReady(True)
+        QTimer.singleShot(2000, self.toggle_led)
+
     def read_from_arduino(self):
         """Called automatically when Arduino sends data."""
-        while self.serial.canReadLine():
-            # Read line, decode bytes to string, strip whitespace
-            data = self.serial.readLine().data().decode("utf-8").strip()
-            print(f"Received from Arduino: {data}")  # For debugging
-            
-            # Do whatever you need with the data
-            self.statusBar().showMessage(f"LED: {data}", 3000) 
+        data = self.serial.readAll().data().decode("utf-8", errors="replace").strip()
+        if data:
+            self.statusBar().showMessage(f"LED: {data}", 3000)
 
     def write_to_arduino(self, command):
         """Call this to send data."""
         if self.serial.isOpen():
-            # Ensure newline if Arduino expects it
             if not command.endswith('\n'):
                 command += '\n'
             self.serial.write(command.encode("utf-8"))
             self.serial.flush()
-            print (f"Sent to Arduino: {command.strip()}")  # For debugging
         else:
             self.show_alert("Serial Error", "Serial port not open!")
 
