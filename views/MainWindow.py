@@ -255,7 +255,7 @@ class MainWindow(QMainWindow):
         """Setup serial port without a separate thread."""
         self.serial = QSerialPort()
 
-        port_name = self._config.get("arduino_port", "COM6")
+        port_name = self._config.get("arduino_port", self._config["arduino"]["port"])
         self.serial.setPortName(port_name)
         self.serial.setBaudRate(QSerialPort.Baud9600)
 
@@ -278,7 +278,17 @@ class MainWindow(QMainWindow):
         """Called automatically when Arduino sends data."""
         data = self.serial.readAll().data().decode("utf-8", errors="replace").strip()
         if data:
-            self.statusBar().showMessage(f"LED: {data}", 3000)
+
+            if self._config["arduino"]["debug"]:
+                print (f"Received from Arduino: {data}")
+
+            # deal with incoming data
+            if data.upper() == "EVENT_PEN_START":
+                self.start_measurement()
+
+            elif data.upper() == "EVENT_PEN_STOP":
+                self.stop_measurement()
+
 
     def write_to_arduino(self, command):
         """Call this to send data."""
